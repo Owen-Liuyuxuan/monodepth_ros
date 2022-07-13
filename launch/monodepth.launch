@@ -1,25 +1,32 @@
 <?xml version="1.0"?>
 <launch>
     <arg name="monodepth_path" default="/home/yxliu/multi_cam/monodepth"/>
-    <arg name="cfg_file" default="/home/yxliu/multi_cam/monodepth/configs/kitti360_gtpose_config.py"/>
-    <arg name="weight_path" default="/home/yxliu/multi_cam/monodepth/workdirs/MonoDepth2_pose_kitti360/checkpoint/MonoDepthWPose_ss11.pth"/>
-    <!-- <arg name="onnx_path" default="/home/yxliu/test_ws/model/monodepth.onnx"/> -->
-    <arg name="camera_topic" default="/kitti360/left_camera/image"/>
-    <arg name="camera_param" default="/kitti360/left_camera/camera_info"/>
+    <!-- <arg name="cfg_file" default="/home/yxliu/multi_cam/monodepth/configs/kitti360_gtpose_config.py"/> -->
+    <arg name="cfg_file" default="/home/yxliu/multi_cam/monodepth/configs/multidataset_monodepth2_nuscenes_eval.py"/>
+    <arg name="weight_path" default="$(find monodepth)/model/lib.networks.models.meta_archs.monodepth2_model.MonoDepthWPose_latest.pth"/>
+    <!-- <arg name="weight_path" default="/home/yxliu/multi_cam/monodepth/workdirs/MonoDepth2Nusc/checkpoint/MonoDepthWPose_ss11_threecam_patched.pth"/> -->
+    <!-- <arg name="onnx_path" default="/home/yxliu/test_ws/model/monodepth_learn_pose.onnx"/> -->
+    <arg name="camera_topic" default="/nuscenes/CAM_FRONT/image"/>
+    <arg name="compressed_topic" default="/compressed_image"/>
+    <arg name="camera_param" default="/nuscenes/CAM_FRONT/camera_info"/>
+    <arg name="node_name" default="monodepth_node"/>
+    <!-- <arg name="camera_param" default="/fisheye_right_rect/camera_info"/> -->
     <arg name="point_cloud_topic" default="/point_cloud"/>
-    <arg name="MAX_DEPTH" default="60"/>
+    <arg name="MAX_DEPTH" default="50"/>
     <arg name="INFERENCE_SCALE" default="1.0"/>
-    <arg name="MIN_Y" default="-2.0"/>
-    <arg name="MAX_Y" default="4.5"/>
-    <arg name="INFERENCE_W" default="640"/>
-    <arg name="INFERENCE_H" default="192"/>
+    <arg name="MIN_Y" default="-5.5"/>
+    <arg name="MAX_Y" default="1.8"/>
+    <!-- <arg name="INFERENCE_W" default="352"/> -->
+    <arg name="INFERENCE_W" default="384"/>
+    <arg name="INFERENCE_H" default="288"/>
+    <!-- <arg name="INFERENCE_H" default="192"/> -->
 
-    <node pkg="monodepth" type="monodepth_node.py" name="monodepth_node" output="screen">
+    <node pkg="monodepth" type="monodepth_node.py" name="$(arg node_name)" output="screen">
         <param name="MONODEPTH_PATH" value="$(arg monodepth_path)"/>
         <param name="CFG_FILE" value="$(arg cfg_file)"/>
         <param name="WEIGHT_PATH" value="$(arg weight_path)"/>
         <param name="MAX_DEPTH" value="$(arg MAX_DEPTH)"/>
-        <param name="ONNX_PATH" value="$(arg onnx_path)"/>
+        <!-- <param name="ONNX_PATH" value="$(arg onnx_path)"/> -->
         <param name="INFERENCE_SCALE" value="$(arg INFERENCE_SCALE)"/>
         <param name="MIN_Y" value="$(arg MIN_Y)"/>
         <param name="MAX_Y" value="$(arg MAX_Y)"/>
@@ -27,6 +34,7 @@
         <param name="INFERENCE_H" value="$(arg INFERENCE_H)"/>
         <remap from="/image_raw" to="$(arg camera_topic)"/>
         <remap from="/camera_info" to="$(arg camera_param)"/>
+        <remap from="/compressed_image" to="$(arg compressed_topic)"/>
         <remap from="/point_cloud" to="$(arg point_cloud_topic)"/>
     </node>
     <!-- <node pkg="rviz" type="rviz" name="rviz" args="-d $(find monodetph)/rviz/rviz.rviz"/> -->
