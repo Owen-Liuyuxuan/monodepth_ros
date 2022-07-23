@@ -113,9 +113,10 @@ class RosNode:
             depth = F.adaptive_avg_pool2d(depth, (h0, w0))
 
             depth = depth[0, 0]
+            h, w = depth.shape
             torch.clip(depth, 0, self.max_depth, out=depth)
 
-            point_cloud = depth_image_to_point_cloud_tensor(depth, self.P[0:3, 0:3], image)
+            point_cloud = depth_image_to_point_cloud_tensor(depth, data['P2'][0, 0:3, 0:3].cpu().numpy(), cv2.resize(image, (w, h)))
             mask = (point_cloud[:, 1] > self.min_y) * (point_cloud[:, 1] < self.max_y)
 
             point_cloud = point_cloud[mask].cpu().numpy()
