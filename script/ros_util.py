@@ -34,7 +34,7 @@ def depth_image_to_point_cloud_array(depth_image, K, rgb_image=None):
     return point_cloud
 
 import torch
-def depth_image_to_point_cloud_tensor(depth_image, K, rgb_image=None):
+def depth_image_to_point_cloud_tensor(depth_image, K, rgb_image=None, mask=None):
     """  convert depth image into color pointclouds [xyzbgr]
     
     """
@@ -53,8 +53,11 @@ def depth_image_to_point_cloud_tensor(depth_image, K, rgb_image=None):
     if rgb_image is not None:
         tensor_image = torch.from_numpy(rgb_image).to(depth_image.device)
         pc_3d = torch.cat([pc_3d, tensor_image/256.0], axis=2)
-    point_cloud = pc_3d[depth_image > 0,:]
-    
+    if mask is not None:
+        over_all_mask = torch.logical_and(depth_image > 0, torch.from_numpy(mask).to(depth_image.device).bool())
+        point_cloud = pc_3d[over_all_mask, :]
+    else:
+        point_cloud = pc_3d[depth_image > 0,:]
     return point_cloud
 
 def line_points_from_3d_bbox(x, y, z, w, h, l, theta):

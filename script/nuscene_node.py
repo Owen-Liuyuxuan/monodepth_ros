@@ -38,21 +38,21 @@ class RosNode:
         sys.path.append(monodepth_path)
         from lib.utils.utils import cfg_from_file
 
-        cfg_file = rospy.get_param("~CFG_FILE", "/home/yxliu/test_ws/src/monodepth/model/nusc5cam_monodept2wPose.py")
+        cfg_file = rospy.get_param("~CFG_FILE", "/home/yxliu/multi_cam/monodepth/configs/nusc_json_288512.py")
         self.cfg = cfg_from_file(cfg_file)
         self.cfg.meta_arch.depth_backbone_cfg.pretrained=False
         # self.cfg.meta_arch.pose_backbone_cfg.pretrained=False
 
         # self.onnx_path = rospy.get_param("~ONNX_PATH", "/home/yxliu/test_ws/model/monodepth.onnx")
         self.weight_path = rospy.get_param("~WEIGHT_PATH",
-             "/home/yxliu/multi_cam/monodepth/workdirs/MonoDepth2NuscWPose/checkpoint/MonoDepthWPose_5cam_allside_sweep_overlapped_true.pth")
+             "/home/yxliu/multi_cam/new_stereo/submitted_result/monodepth_unsupervised/Res34WPoseNusc_288_512_latest.pth")
 
-        self.inference_w   = int(rospy.get_param("~INFERENCE_W",  384))
+        self.inference_w   = int(rospy.get_param("~INFERENCE_W",  512))
         self.inference_h   = int(rospy.get_param("~INFERENCE_H",  288))
         self.inference_scale = float(rospy.get_param("~INFERENCE_SCALE", 1.0))
         self.max_depth = float(rospy.get_param("~MAX_DEPTH", 50))
-        self.min_y = float(rospy.get_param("~MIN_Y", -5.5))
-        self.max_y = float(rospy.get_param("~MAX_Y", 1.8))
+        self.min_y = float(rospy.get_param("~MIN_Y", -2.0))
+        self.max_y = float(rospy.get_param("~MAX_Y", 5.5))
 
         self.channels = ['CAM_FRONT', 'CAM_FRONT_LEFT', 'CAM_FRONT_RIGHT', 'CAM_BACK', 'CAM_BACK_LEFT', 'CAM_BACK_RIGHT']
         
@@ -117,6 +117,7 @@ class RosNode:
                 }
             ) for i in range(len(images))]    
         )
+        h_eff, w_eff = data[('image_resize', 'effective_size')][0]
 
         output_pcs = []
         
@@ -128,15 +129,18 @@ class RosNode:
             output_dict = self.meta_arch(data, meta)
             
             depths = output_dict["depth"]
+            _, _, h_depth, w_detph = depths.shape
             #depths = F.adaptive_avg_pool2d(depths, (h0, w0))
             
             for i, cam in enumerate(self.channels):
                 depth = depths[i, 0] * self.scales[cam]
+                depth = depth[0:h_eff, 0:w_eff]
                 h, w = depth.shape
                 torch.clip(depth, 0, self.max_depth, out=depth)
 
+                resize_rgb = cv2.resize(images[i], (w_detph, h_depth))[0:h_eff, 0:w_eff]
                 point_cloud = depth_image_to_point_cloud_tensor(depth, data['P2'][i, 0:3, 0:3].cpu().numpy(), cv2.resize(images[i], (w, h)))
-                mask = (point_cloud[:, 1] > self.min_y) * (point_cloud[:, 1] < self.max_y)
+                mask = (point_cloud[:, 1] > self.min_y) * (point_cloud[:, 1] < self.max_y) * (point_cloud[:, 2] < self.max_depth)
 
                 point_cloud = point_cloud[mask].cpu().numpy()
                 output_pcs.append(point_cloud)
@@ -152,6 +156,8 @@ class RosNode:
             if self.Ps[channel] is not None:
                 image = np.frombuffer(msgs[i].data, dtype=np.uint8).reshape([height, width, 3]) #[BGR]
                 images.append(image[:, :, ::-1])
+            else:
+                return
         point_clouds = self._predict_depth(images) # BGR -> RGB
         for i in range(len(self.channels)):
             channel = self.channels[i]
