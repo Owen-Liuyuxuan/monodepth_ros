@@ -23,3 +23,8 @@ Camera calibration information of the rectified image.
 point_cloud ([sensor_msgs/PointCloud2](http://docs.ros.org/en/api/sensor_msgs/html/msg/PointCloud2.html))
 
 Predicted point clouds.
+
+
+
+Latest update: We also add a segmentation model trained by [segmentation](http://gitlab.ram-lab.com/yuxuan/segmentation) repo exported with onnx. [Model File](http://gofile.me/4jm56/MWwTw1BRE)
+
