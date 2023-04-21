@@ -23,7 +23,7 @@ def collate_fn(batch):
 
 class RosNode:
     def __init__(self):
-        rospy.init_node("ros_node")
+        rospy.init_node("left_fisheye_monodepth_ros_node")
         rospy.loginfo("Starting RosNode.")
 
         self._read_params()
@@ -33,25 +33,25 @@ class RosNode:
 
     def _read_params(self):
         rospy.loginfo("Reading params.")
-        monodepth_path = rospy.get_param("~MONODEPTH_PATH", "/home/FSNet")
+        monodepth_path = rospy.get_param("~MONODEPTH_PATH", "/home/yxliu/multi_cam/monodepth")
         import sys
         sys.path.append(monodepth_path)
         from vision_base.utils.utils import cfg_from_file
 
-        cfg_file = rospy.get_param("~CFG_FILE", "/home/yxliu/multi_cam/monodepth/configs/kitti360_gtpose_config.py")
+        cfg_file = rospy.get_param("~CFG_FILE", "/home/yxliu/multi_cam/monodepth/configs/kitti360_fisheye.py")
         self.cfg = cfg_from_file(cfg_file)
         self.cfg.meta_arch.depth_backbone_cfg.pretrained=False
-        # self.cfg.meta_arch.pose_backbone_cfg.pretrained=False
 
+        self.fish_eye_mask = torch.from_numpy(cv2.resize(cv2.imread('/home/yxliu/test_ws/src/monodepth/model/fisheye_mask.png', -1), (384, 384), cv2.INTER_NEAREST)).bool().cuda()
         self.onnx_path = rospy.get_param("~ONNX_PATH", "/home/yxliu/test_ws/model/monodepth.onnx")
-        self.weight_path = rospy.get_param("~WEIGHT_PATH", "/home/yxliu/multi_cam/monodepth/workdirs/MonoDepth2WPose/checkpoint/MonoDepthWPose_ss11.pth")
+        self.weight_path = rospy.get_param("~WEIGHT_PATH", "/home/yxliu/multi_cam/monodepth/workdirs/KITTI360_fisheye/checkpoint/lib.networks.models.meta_archs.monodepth2_model.MonoDepthWPose_19.pth")
 
-        self.inference_w   = int(rospy.get_param("~INFERENCE_W",  640))
-        self.inference_h   = int(rospy.get_param("~INFERENCE_H",  192))
+        self.inference_w   = int(rospy.get_param("~INFERENCE_W",  384))
+        self.inference_h   = int(rospy.get_param("~INFERENCE_H",  384))
         self.inference_scale = float(rospy.get_param("~INFERENCE_SCALE", 1.0))
         self.max_depth = float(rospy.get_param("~MAX_DEPTH", 50))
-        self.min_y = float(rospy.get_param("~MIN_Y", -2.0))
-        self.max_y = float(rospy.get_param("~MAX_Y", 4.5))
+        self.min_y = float(rospy.get_param("~MIN_Y", -0.0))
+        self.max_y = float(rospy.get_param("~MAX_Y", 2.5))
 
         self.cfg.val_dataset.augmentation.cfg_list[1].size = (self.inference_h, self.inference_w)
 
@@ -66,7 +66,7 @@ class RosNode:
         self.meta_arch.load_state_dict(state_dict['model_state_dict'], strict=False)
         self.meta_arch.eval()
         # self.ort_session = ort.InferenceSession(self.onnx_path, providers=['CUDAExecutionProvider'])
-
+        self.projector = build(**dict(name="lib.networks.utils.mei_fisheye_utils.MeiCameraProjection"))
         self.transform = build(**self.cfg.val_dataset.augmentation)
         self.test_pipeline = build(**self.cfg.trainer.evaluate_hook.test_run_hook_cfg)
         rospy.loginfo("Done loading model.")
@@ -77,57 +77,35 @@ class RosNode:
 
     def _init_topics(self):
         self.pc_publisher = rospy.Publisher("/point_cloud", PointCloud2, queue_size=1)
-        rospy.Subscriber("/image_raw", Image, self.camera_callback, buff_size=2**24, queue_size=1)
+        rospy.Subscriber("/kitti360/left_fisheye_camera/image", Image, self.camera_callback, buff_size=2**24, queue_size=1)
         rospy.Subscriber("/compressed_image", CompressedImage, self.compressed_camera_callback, buff_size=2**24, queue_size=1)
-        rospy.Subscriber("/camera_info", CameraInfo, self.camera_info_callback)
+        rospy.Subscriber("/kitti360/left_fisheye_camera/camera_info", CameraInfo, self.camera_info_callback)
 
     def _predict_depth(self, image):
         data = dict()
         h0, w0, _ = image.shape # (h, w, 3)
         data[('image', 0)] = image.copy()
         data['P2'] = self.P.copy()
-
+        
         data = self.transform(data)
         h_eff, w_eff = data[('image_resize', 'effective_size')]
         data = collate_fn([data])
-
-        # image_numpy = data[('image', 0)].contiguous().numpy()
-        # outputs = self.ort_session.run(None, {'input': image_numpy})
-        # depth = outputs[0][0, 0] * self.inference_scale 
-
-        # depth = cv2.resize(
-        #     depth, (w0, h0), interpolation=cv2.INTER_NEAREST
-        # )
-
-        # point_cloud = depth_image_to_point_cloud_array(depth, self.P[0:3, 0:3], rgb_image=image)
-        # mask = (point_cloud[:, 1] > self.min_y) * (point_cloud[:, 1] < self.max_y) * (point_cloud[:, 0] < self.max_depth)
-        # point_cloud = point_cloud[mask]
-        
+        data['calib_meta'] = self.calib
         with torch.no_grad():
-            
             output_dict = self.test_pipeline(data, self.meta_arch)
-            depth = output_dict["depth"] * self.inference_scale
-            depth = depth[0, 0]
-            h_depth, w_detph = depth.shape
-            
-            depth = depth[0:h_eff, 0:w_eff]
-            resize_rgb = cv2.resize(image, (w_detph, h_depth))[0:h_eff, 0:w_eff]
+            depth = output_dict["norm"] * self.inference_scale
+            point_cloud, mask = self.projector.image2cam(depth, data['P2'], self.calib)
+            mask = mask * (depth > 1.3) * self.fish_eye_mask
+            print(point_cloud.shape, data[('original_image', 0)][None].shape)
+            rgb_point_cloud = torch.cat([point_cloud, data[('original_image', 0)][None].contiguous() / 256], dim=-1)
+            rgb_point_cloud = rgb_point_cloud[:, :, 210:330, 100:284][mask[:, :, 210:330, 100:284].bool()] #[N, 3]
+            print(rgb_point_cloud[:, 2].min(), rgb_point_cloud[:, 2].max())
+            mask = (rgb_point_cloud[:, 1] > self.min_y) * (rgb_point_cloud[:, 1] < self.max_y) * (rgb_point_cloud[:, 2] < self.max_depth) * (rgb_point_cloud[:, 2] > 0.1) 
 
-            # torch.clip(depth, 0, self.max_depth, out=depth)
+            rgb_point_cloud = rgb_point_cloud[mask].cpu().numpy()
+            print(rgb_point_cloud.shape)
 
-            crop_top = 0
-            croped_depth = depth[crop_top:, :]
-            croped_image = resize_rgb[crop_top:, :, :]
-            croppred_P = data['P2'][0, 0:3, 0:3].cpu().numpy()
-            croppred_P[1, 2] -= crop_top
-
-            point_cloud = depth_image_to_point_cloud_tensor(croped_depth, croppred_P, croped_image)
-            mask = (point_cloud[:, 1] > self.min_y) * (point_cloud[:, 1] < self.max_y) * (point_cloud[:, 0] < self.max_depth)
-
-            point_cloud = point_cloud[mask].cpu().numpy()
-            
-
-        return depth, point_cloud
+        return depth, rgb_point_cloud
 
     def camera_callback(self, msg):
         height = msg.height
@@ -144,9 +122,17 @@ class RosNode:
             publish_point_cloud(point_cloud, self.pc_publisher, self.frame_id, 'xyzrgb')
 
     def camera_info_callback(self, msg):
-        self.P = np.zeros((3, 4))
-        self.P[0:3, 0:3] = np.array(msg.K).reshape((3, 3))
+        # self.P = np.zeros((3, 4))
+        # self.P[0:3, 0:3] = np.array(msg.K).reshape((3, 3))
         self.frame_id = msg.header.frame_id
+        self.P = np.array([1.3363220825849971e+03, 0, 7.1694323510126321e+02, 0,
+                           0, 1.3357883350012958e+03, 7.0576498308221585e+02, 0,
+                           0, 0, 1, 0]).reshape([3, 4])
+        calib = dict(
+                distortion_parameters=dict(k1=1.6798235660113681e-02, k2=1.6548773243373522e+00),
+                mirror_parameters=dict(xi=2.2134047507854890e+00)
+            )
+        self.calib = [calib]
 
 if __name__ == "__main__":
     ros_node = RosNode()

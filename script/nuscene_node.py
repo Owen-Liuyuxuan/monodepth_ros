@@ -33,10 +33,10 @@ class RosNode:
 
     def _read_params(self):
         rospy.loginfo("Reading params.")
-        monodepth_path = rospy.get_param("~MONODEPTH_PATH", "/home/yxliu/multi_cam/monodepth")
+        monodepth_path = rospy.get_param("~MONODEPTH_PATH", "/home/FSNet")
         import sys
         sys.path.append(monodepth_path)
-        from lib.utils.utils import cfg_from_file
+        from vision_base.utils.utils import cfg_from_file
 
         cfg_file = rospy.get_param("~CFG_FILE", "/home/yxliu/multi_cam/monodepth/configs/nusc_json_288512.py")
         self.cfg = cfg_from_file(cfg_file)
@@ -61,11 +61,7 @@ class RosNode:
 
     def _init_model(self):
         rospy.loginfo("Loading model.")
-        import lib.networks
-        import lib.data
-        import lib.pipeline_hooks
-        import lib.evaluation
-        from lib.utils.builder import build
+        from vision_base.utils.builder import build
         self.meta_arch = build(**self.cfg.meta_arch)
         self.meta_arch = self.meta_arch.cuda()
         state_dict = torch.load(

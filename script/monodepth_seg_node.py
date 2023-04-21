@@ -63,14 +63,14 @@ class RosNode:
         sys.path.append(monodepth_path)
         from lib.utils.utils import cfg_from_file
 
-        cfg_file = rospy.get_param("~CFG_FILE", "/home/yxliu/multi_cam/monodepth/configs/kitti360_gtpose_config.py")
+        cfg_file = rospy.get_param("~CFG_FILE", "/home/yxliu/multi_cam/monodepth/configs/kitti360_distillwpose.py")
         self.cfg = cfg_from_file(cfg_file)
         self.cfg.meta_arch.depth_backbone_cfg.pretrained=False
         # self.cfg.meta_arch.pose_backbone_cfg.pretrained=False
 
         self.onnx_path = rospy.get_param("~SEG_ONNX_PATH", "/home/yxliu/test_ws/src/segmentation/model/server10_unet_49.onnx")
 
-        self.weight_path = rospy.get_param("~WEIGHT_PATH", "/home/yxliu/multi_cam/monodepth/workdirs/MonoDepth2WPose/checkpoint/MonoDepthWPose_ss11.pth")
+        self.weight_path = rospy.get_param("~WEIGHT_PATH", "/home/yxliu/multi_cam/monodepth/workdirs/KITTI360_WPoseDistill/checkpoint/lib.networks.models.meta_archs.monodepth2_model.DistillWPoseMeta_19.pth")
 
         self.inference_w   = int(rospy.get_param("~INFERENCE_W",  640))
         self.inference_h   = int(rospy.get_param("~INFERENCE_H",  192))
