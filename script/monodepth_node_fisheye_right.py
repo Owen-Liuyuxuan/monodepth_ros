@@ -3,7 +3,6 @@ import numpy as np
 import cv2
 import torch
 import torch.nn.functional as F
-import onnxruntime as ort
 
 import rospy
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2, CompressedImage
@@ -33,7 +32,7 @@ class RosNode:
 
     def _read_params(self):
         rospy.loginfo("Reading params.")
-        monodepth_path = rospy.get_param("~MONODEPTH_PATH", "/home/yxliu/multi_cam/monodepth")
+        monodepth_path = rospy.get_param("~MONODEPTH_PATH", "/home/yxliu/multi_cam/FSNet")
         import sys
         sys.path.append(monodepth_path)
         from vision_base.utils.utils import cfg_from_file
@@ -43,7 +42,6 @@ class RosNode:
         self.cfg.meta_arch.depth_backbone_cfg.pretrained=False
         # self.cfg.meta_arch.pose_backbone_cfg.pretrained=False
 
-        self.onnx_path = rospy.get_param("~ONNX_PATH", "/home/yxliu/test_ws/model/monodepth.onnx")
         self.weight_path = rospy.get_param("~WEIGHT_PATH", "/home/yxliu/multi_cam/monodepth/workdirs/KITTI360_fisheye/checkpoint/lib.networks.models.meta_archs.monodepth2_model.MonoDepthWPose_19.pth")
 
         self.fish_eye_mask = torch.from_numpy(cv2.resize(cv2.imread('/home/yxliu/test_ws/src/monodepth/model/fisheye_mask.png', -1), (384, 384), cv2.INTER_NEAREST)).bool().cuda()
@@ -67,8 +65,7 @@ class RosNode:
         )
         self.meta_arch.load_state_dict(state_dict['model_state_dict'], strict=False)
         self.meta_arch.eval()
-        # self.ort_session = ort.InferenceSession(self.onnx_path, providers=['CUDAExecutionProvider'])
-        self.projector = build(**dict(name="lib.networks.utils.mei_fisheye_utils.MeiCameraProjection"))
+        self.projector = build(**dict(name="monodepth.networks.utils.mei_fisheye_utils.MeiCameraProjection"))
         self.transform = build(**self.cfg.val_dataset.augmentation)
         self.test_pipeline = build(**self.cfg.trainer.evaluate_hook.test_run_hook_cfg)
         rospy.loginfo("Done loading model.")

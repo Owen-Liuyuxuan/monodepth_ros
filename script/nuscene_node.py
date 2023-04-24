@@ -3,7 +3,6 @@ import numpy as np
 import cv2
 import torch
 import torch.nn.functional as F
-import onnxruntime as ort
 import message_filters
 import rospy
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2, CompressedImage
@@ -134,7 +133,7 @@ class RosNode:
                 h, w = depth.shape
                 torch.clip(depth, 0, self.max_depth, out=depth)
 
-                resize_rgb = cv2.resize(images[i], (w_detph, h_depth))[0:h_eff, 0:w_eff]
+                resize_rgb = cv2.resize(image, (w_eff, h_eff))
                 point_cloud = depth_image_to_point_cloud_tensor(depth, data['P2'][i, 0:3, 0:3].cpu().numpy(), cv2.resize(images[i], (w, h)))
                 mask = (point_cloud[:, 1] > self.min_y) * (point_cloud[:, 1] < self.max_y) * (point_cloud[:, 2] < self.max_depth)
 

@@ -3,7 +3,6 @@ import numpy as np
 import cv2
 import torch
 import torch.nn.functional as F
-import onnxruntime as ort
 
 import rospy
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2, CompressedImage
@@ -41,9 +40,7 @@ class RosNode:
         cfg_file = rospy.get_param("~CFG_FILE", "/home/yxliu/multi_cam/monodepth/configs/kitti360_gtpose_config.py")
         self.cfg = cfg_from_file(cfg_file)
         self.cfg.meta_arch.depth_backbone_cfg.pretrained=False
-        # self.cfg.meta_arch.pose_backbone_cfg.pretrained=False
 
-        self.onnx_path = rospy.get_param("~ONNX_PATH", "/home/yxliu/test_ws/model/monodepth.onnx")
         self.weight_path = rospy.get_param("~WEIGHT_PATH", "/home/yxliu/multi_cam/monodepth/workdirs/MonoDepth2WPose/checkpoint/MonoDepthWPose_ss11.pth")
 
         self.inference_w   = int(rospy.get_param("~INFERENCE_W",  640))
@@ -65,7 +62,6 @@ class RosNode:
         )
         self.meta_arch.load_state_dict(state_dict['model_state_dict'], strict=False)
         self.meta_arch.eval()
-        # self.ort_session = ort.InferenceSession(self.onnx_path, providers=['CUDAExecutionProvider'])
 
         self.transform = build(**self.cfg.val_dataset.augmentation)
         self.test_pipeline = build(**self.cfg.trainer.evaluate_hook.test_run_hook_cfg)
@@ -90,18 +86,6 @@ class RosNode:
         data = self.transform(data)
         h_eff, w_eff = data[('image_resize', 'effective_size')]
         data = collate_fn([data])
-
-        # image_numpy = data[('image', 0)].contiguous().numpy()
-        # outputs = self.ort_session.run(None, {'input': image_numpy})
-        # depth = outputs[0][0, 0] * self.inference_scale 
-
-        # depth = cv2.resize(
-        #     depth, (w0, h0), interpolation=cv2.INTER_NEAREST
-        # )
-
-        # point_cloud = depth_image_to_point_cloud_array(depth, self.P[0:3, 0:3], rgb_image=image)
-        # mask = (point_cloud[:, 1] > self.min_y) * (point_cloud[:, 1] < self.max_y) * (point_cloud[:, 0] < self.max_depth)
-        # point_cloud = point_cloud[mask]
         
         with torch.no_grad():
             
@@ -111,9 +95,7 @@ class RosNode:
             h_depth, w_detph = depth.shape
             
             depth = depth[0:h_eff, 0:w_eff]
-            resize_rgb = cv2.resize(image, (w_detph, h_depth))[0:h_eff, 0:w_eff]
-
-            # torch.clip(depth, 0, self.max_depth, out=depth)
+            resize_rgb = cv2.resize(image, (w_eff, h_eff))
 
             crop_top = 0
             croped_depth = depth[crop_top:, :]
